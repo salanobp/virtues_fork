@@ -1,35 +1,36 @@
-import torch
+from typing import Tuple
+
 import numpy as np
-import random
 import pandas as pd
+import torch
 from torch.utils.data import Dataset
 from torchvision.transforms import v2
+
 from datasets.augmentations import MultiplexRandomCrop, MultiplexRandomSymmetry, ChannelDropout
-from utils.utils import load_marker_embedding_dict
 from utils.masking import generate_mask
-from typing import Tuple
-import math
+from utils.utils import load_marker_embedding_dict
+
 
 class MultiplexDataset(Dataset):
 
     def __init__(
             self,
             tissue_dir: str,
-            crop_dir : str,
+            crop_dir: str,
             mask_dir: str,
             tissue_index: str,
-            crop_index : str,
-            channels_file : str,
-            quantiles_file : str,
-            means_file : str,
-            stds_file : str,
-            marker_embedding_dir : str,
-            split : str = 'all',
-            crop_size : int = 128,
-            patch_size : int = 8,
-            masking_ratio : Tuple[float, float] = (0.6, 1.0),
-            channel_fraction : Tuple[float, float] = (0.75, 1.0),
-        ):
+            crop_index: str,
+            channels_file: str,
+            quantiles_file: str,
+            means_file: str,
+            stds_file: str,
+            marker_embedding_dir: str,
+            split: str = 'all',
+            crop_size: int = 128,
+            patch_size: int = 8,
+            masking_ratio: Tuple[float, float] = (0.6, 1.0),
+            channel_fraction: Tuple[float, float] = (0.75, 1.0),
+    ):
         """
         tissue_dir: directory containing full multiplex images
         crop_dir: directory containing cropped multiplex images for training
@@ -45,7 +46,7 @@ class MultiplexDataset(Dataset):
         masking_ratio: tuple indicating the range of masking ratios from which per-sample masking ratio is drawn uniformly
         channel_fraction: tuple indicating the range of channel fractions from which per-sample fraction for channel dropout is drawn uniformly
         """
-        
+
         self.tissue_dir = tissue_dir
         self.crop_dir = crop_dir
         self.mask_dir = mask_dir
@@ -59,8 +60,8 @@ class MultiplexDataset(Dataset):
         self.means = pd.read_csv(means_file, index_col=0)
         self.stds = pd.read_csv(stds_file, index_col=0)
 
-        self.channel_mask = [] 
-        self.marker_indices = [] 
+        self.channel_mask = []
+        self.marker_indices = []
         marker_embedding_dict = load_marker_embedding_dict(marker_embedding_dir)
         for i, row in self.channels.iterrows():
             protein_id = row['protein_id']
@@ -87,7 +88,6 @@ class MultiplexDataset(Dataset):
         self.gaussian_blur = v2.GaussianBlur(kernel_size=3, sigma=(1.0))
         self.drop_channels = ChannelDropout(channel_fraction=channel_fraction)
 
-
     def __len__(self):
         return len(self.crop_index)
 
@@ -95,19 +95,19 @@ class MultiplexDataset(Dataset):
         row = self.crop_index.iloc[idx]
         tissue_id = row['tissue_id']
         crop_id = row['crop_id']
-        
+
         multiplex = self.get_crop(tissue_id, crop_id, preprocess=True)
 
         marker_indices = self.marker_indices
 
         multiplex, marker_indices = self._augment(multiplex, marker_indices)
-    
+
         C = multiplex.shape[0]
         H = W = self.crop_size // self.patch_size
         mask = generate_mask(C, H, W, self.masking_ratio)
 
         return multiplex, marker_indices, mask
-    
+
     def get_tissue(self, tissue_id: str, preprocess: bool = True):
         """
         Returns the full multiplex image for the given tissue_id including per-default preprocessing.
@@ -119,7 +119,7 @@ class MultiplexDataset(Dataset):
         if preprocess:
             multiplex = self._preprocess(tissue_id, multiplex)
         return multiplex
-    
+
     def get_crop(self, tissue_id: str, crop_id: int, preprocess: bool = True):
         """
         Returns the specified crop for the given tissue_id including per-default preprocessing.
@@ -131,7 +131,7 @@ class MultiplexDataset(Dataset):
         if preprocess:
             multiplex = self._preprocess(tissue_id, multiplex)
         return multiplex
-    
+
     def get_segmentation_mask(self, tissue_id: str):
         """
         Returns the segmentation mask for the given tissue_id.
@@ -146,7 +146,7 @@ class MultiplexDataset(Dataset):
         Returns the marker indices corresponding to the channels used in the dataset.
         """
         return torch.tensor(self.marker_indices, dtype=torch.long)
-    
+
     def _preprocess(self, tissue_id: str, multiplex: torch.Tensor):
         """
         Applies image-preprocessing steps.
@@ -156,7 +156,7 @@ class MultiplexDataset(Dataset):
         quantiles = torch.from_numpy(quantiles).float()[:, None, None]
         min_ = torch.zeros_like(quantiles)
         multiplex = torch.clamp(multiplex, min=min_, max=quantiles)
-        
+
         # 2. Log1p normalization
         multiplex = torch.log1p(multiplex)
 
@@ -172,7 +172,7 @@ class MultiplexDataset(Dataset):
         multiplex = (multiplex - log_mean) / (log_std + 1e-9)
         return multiplex
 
-    def _augment(self, multiplex : torch.Tensor, marker_indices : torch.Tensor):
+    def _augment(self, multiplex: torch.Tensor, marker_indices: torch.Tensor):
         """
         Applies image augmentations.
         multiplex: Tensor of shape (C, H, W)
@@ -187,8 +187,3 @@ class MultiplexDataset(Dataset):
         # 3. Random channel dropout
         multiplex, marker_indices = self.drop_channels(multiplex, marker_indices)
         return multiplex, marker_indices
-    
-
-        
-
-

@@ -9,7 +9,14 @@ from modules.layers.positional_embeddings import (
     PositionalEmbedding2D, LearnablePositionalEmbedding2D, RotaryPositionalEmbedding2D
 )
 
-from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
+try:
+    from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
+
+    FLASH_ATTN_AVAILABLE = True
+except ImportError:
+    FLASH_ATTN_AVAILABLE = False
+    flash_attn_varlen_qkvpacked_func = None
+    print("HINWEIS: FlashAttention nicht verfügbar. Standard-Modus wird verwendet.")
 
 
 class MHAwithPosEmb(nn.Module):
@@ -36,13 +43,13 @@ class MHAwithPosEmb(nn.Module):
     """
 
     def __init__(
-        self,
-        embed_dim: int,
-        num_heads: int,
-        dropout: float = 0.0,
-        bias: bool = True,
-        inbuilt_pos_emb: Optional[str] = "absolute",
-        keyval_embed_dim: Optional[int] = None,
+            self,
+            embed_dim: int,
+            num_heads: int,
+            dropout: float = 0.0,
+            bias: bool = True,
+            inbuilt_pos_emb: Optional[str] = "absolute",
+            keyval_embed_dim: Optional[int] = None,
     ) -> None:
         super().__init__()
         if keyval_embed_dim is None:
@@ -87,11 +94,11 @@ class MHAwithPosEmb(nn.Module):
             )
 
     def _apply_pos_before_linear(
-        self,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        query_pos: Optional[torch.Tensor],
-        key_pos: Optional[torch.Tensor],
+            self,
+            query: torch.Tensor,
+            key: torch.Tensor,
+            query_pos: Optional[torch.Tensor],
+            key_pos: Optional[torch.Tensor],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         if self.pos_emb is not None and self.pos_before_linear:
             if query_pos is not None:
@@ -101,12 +108,12 @@ class MHAwithPosEmb(nn.Module):
         return query, key
 
     def _apply_pos_after_linear_heads(
-        self,
-        q: torch.Tensor,
-        k: torch.Tensor,
-        query_pos: Optional[torch.Tensor],
-        key_pos: Optional[torch.Tensor],
-        heads_expansion: str,
+            self,
+            q: torch.Tensor,
+            k: torch.Tensor,
+            query_pos: Optional[torch.Tensor],
+            key_pos: Optional[torch.Tensor],
+            heads_expansion: str,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Apply per-head positional embedding (e.g., RoPE) after linear projections.
@@ -135,16 +142,16 @@ class MHAwithPosEmb(nn.Module):
         return q, k
 
     def forward(
-        self,
-        query: torch.Tensor,        # (B, L, embed_dim)
-        key: torch.Tensor,          # (B, S, keyval_embed_dim or embed_dim)
-        value: torch.Tensor,        # (B, S, keyval_embed_dim or embed_dim)
-        query_pos: Optional[torch.Tensor] = None,  # (B, L, 2)
-        key_pos: Optional[torch.Tensor] = None,    # (B, S, 2)
-        key_padding_mask: Optional[torch.Tensor] = None,  # (B, S) bool or float(-inf/0) mask
-        return_attention: bool = False,
-        cu_seq_len: Optional[torch.Tensor] = None,  # FlashAttention varlen
-        max_seq_len: Optional[int] = None,          # FlashAttention varlen
+            self,
+            query: torch.Tensor,  # (B, L, embed_dim)
+            key: torch.Tensor,  # (B, S, keyval_embed_dim or embed_dim)
+            value: torch.Tensor,  # (B, S, keyval_embed_dim or embed_dim)
+            query_pos: Optional[torch.Tensor] = None,  # (B, L, 2)
+            key_pos: Optional[torch.Tensor] = None,  # (B, S, 2)
+            key_padding_mask: Optional[torch.Tensor] = None,  # (B, S) bool or float(-inf/0) mask
+            return_attention: bool = False,
+            cu_seq_len: Optional[torch.Tensor] = None,  # FlashAttention varlen
+            max_seq_len: Optional[int] = None,  # FlashAttention varlen
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Returns:
@@ -165,9 +172,9 @@ class MHAwithPosEmb(nn.Module):
         query, key = self._apply_pos_before_linear(query, key, query_pos, key_pos)
 
         # (2) Linear projections
-        Q = self.W_q(query)   # (B, L, E)
-        K = self.W_k(key)     # (B, S, E)
-        V = self.W_v(value)   # (B, S, E)
+        Q = self.W_q(query)  # (B, L, E)
+        K = self.W_k(key)  # (B, S, E)
+        V = self.W_v(value)  # (B, S, E)
 
         # Branch A: SDPA/manual path (supports attention return)
         if key_padding_mask is not None:
@@ -239,10 +246,8 @@ class MHAwithPosEmb(nn.Module):
         if torch.is_autocast_enabled():
             Q, K, V = Q.half(), K.half(), V.half()
 
+        qkv = torch.stack([Q.squeeze(0), K.squeeze(0), V.squeeze(0)], dim=1)
 
-        qkv=torch.stack([Q.squeeze(0), K.squeeze(0), V.squeeze(0)], dim=1)
-
-        
         attn_out = flash_attn_varlen_qkvpacked_func(
             qkv=qkv,
             cu_seqlens=cu_seq_len,

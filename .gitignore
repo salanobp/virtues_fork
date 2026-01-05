@@ -185,4 +185,4 @@ cython_debug/
 #.idea/
 
 # PyPI configuration file
-.pypirc
+.pypircMiniconda3-latest-MacOSX-arm64.sh
