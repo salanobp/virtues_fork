@@ -186,3 +186,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypircMiniconda3-latest-MacOSX-arm64.sh
+datasets/bloodmnist_128/
+datasets/bloodmnist_128/
